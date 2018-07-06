@@ -30,23 +30,26 @@ namespace bdm {
   };
 
 // 1. Define growth behaviour
+  template <typename TSimulation = Simulation<>>
   struct GrowthModule : public BaseBiologyModule {
   GrowthModule() : BaseBiologyModule(gAllBmEvents) {}
 
     template <typename T>
       void Run(T* cell) {
+        auto* sim = TSimulation::GetActive();
+        auto* random = sim->GetRandom();
 
       if (cell->GetDiameter() < 8) {
         cell->ChangeVolume(400);
 
-        array<double, 3> cell_movements{gTRandom.Uniform(-2, 2), gTRandom.Uniform(-2, 2), gTRandom.Uniform(-2, 2)}; // create an array of 3 ramdom numbers between -2 and 2
+        std::array<double, 3> cell_movements{random->Uniform(-2, 2), random->Uniform(-2, 2), random->Uniform(-2, 2)}; // create an array of 3 ramdom numbers between -2 and 2
         cell->UpdatePosition(cell_movements); // update the cell mass location, ie move the cell
         cell->SetPosition(cell->GetPosition()); // set the cell position
       }
 
       else { // if diameter > 8
 
-        if (gTRandom.Uniform(0, 1) <0.8 && cell->GetCanDivide()){
+        if (random->Uniform(0, 1) <0.8 && cell->GetCanDivide()){
           auto daughter = cell->Divide();
           daughter->SetCellColour(cell->GetCellColour()); // daughter take the cell_colour_ value of her mother
           daughter->SetCanDivide(true); // the daughter will be able to divide
@@ -63,37 +66,39 @@ namespace bdm {
 // Define compile time parameter
   template <typename Backend>
     struct CompileTimeParam : public DefaultCompileTimeParam<Backend> {
-  using BiologyModules = Variant<GrowthModule>; // add GrowthModule
+  using BiologyModules = Variant<GrowthModule<>>; // add GrowthModule
   using AtomicTypes = VariadicTypedef<MyCell>; // use MyCell object
   };
 
-template <typename TResourceManager = ResourceManager<>>
-
+template <typename TSimulation = Simulation<>>
 inline int Simulate(int argc, const char** argv) {
-  InitializeBiodynamo(argc, argv);
+  Simulation<> simulation(argc, argv);
+  auto* rm = simulation.GetResourceManager();
+  auto* random = simulation.GetRandom();
+  auto* scheduler = simulation.GetScheduler();
+  auto* param = simulation.GetParam();
 
-  size_t nb_of_cells=2400; // number of cells in the simulation
+  size_t nb_of_cells = 2400; // number of cells in the simulation
   double x_coord, y_coord, z_coord;
 
-  Param::bound_space_ = true;
-  Param::min_bound_ = 0;
-  Param::max_bound_ = 100; // cube of 100*100*100
-  Param::run_mechanical_interactions_ = true;
+  param->bound_space_ = true;
+  param->min_bound_ = 0;
+  param->max_bound_ = 100; // cube of 100*100*100
+  param->run_mechanical_interactions_ = true;
 
-  auto rm = TResourceManager::Get(); // set up resource manager
   auto cells = rm->template Get<MyCell>(); // create a structure to contain cells
   cells->reserve(nb_of_cells); // allocate the correct number of cell in our cells structure before cell creation
 
   for (size_t i = 0; i < nb_of_cells; ++i) {
     // our modelling will be a cell cube of 100*100*100
-    x_coord=gTRandom.Uniform(Param::min_bound_, Param::max_bound_); // random double between 0 and 100
-    y_coord=gTRandom.Uniform(Param::min_bound_, Param::max_bound_);
-    z_coord=gTRandom.Uniform(Param::min_bound_, Param::max_bound_);
+    x_coord = random->Uniform(param->min_bound_, param->max_bound_); // random double between 0 and 100
+    y_coord = random->Uniform(param->min_bound_, param->max_bound_);
+    z_coord = random->Uniform(param->min_bound_, param->max_bound_);
 
     MyCell cell({x_coord, y_coord, z_coord}); // creating the cell at position x, y, z
     // set cell parameters
     cell.SetDiameter(7.5);
-    cell.SetCellColour((int) (y_coord/Param::max_bound_*6)); // will vary from 0 to 5. so 6 different layers depending on y_coord
+    cell.SetCellColour((int) (y_coord/param->max_bound_*6)); // will vary from 0 to 5. so 6 different layers depending on y_coord
 
     cells->push_back(cell); // put the created cell in our cells structure
   }
@@ -103,20 +108,19 @@ inline int Simulate(int argc, const char** argv) {
   cell.SetDiameter(6);
   cell.SetCellColour(8);
   cell.SetCanDivide(true);
-  cell.AddBiologyModule(GrowthModule());
+  cell.AddBiologyModule(GrowthModule<>());
   cells->push_back(cell); // put the created cell in our cells structure
 
   cells->Commit(); // commit cells
 
-//  Param::live_visualization_ = true; // allows live visualization
-//  Param::export_visualization_ = true; // allows export of visualization files
-//  Param::visualization_export_interval_ = 10; // export visualization files every 10 steps
-//  Param::visualize_sim_objects_["MyCell"] = std::set<std::string>{"diameter_", "cell_colour_"}; // add the data member diameter_ to the visualization objects
+//  param->live_visualization_ = true; // allows live visualization
+//  param->export_visualization_ = true; // allows export of visualization files
+//  param->visualization_export_interval_ = 10; // export visualization files every 10 steps
+//  param->visualize_sim_objects_["MyCell"] = std::set<std::string>{"diameter_", "cell_colour_"}; // add the data member diameter_ to the visualization objects
 
 
   // Run simulation
-  Scheduler<> scheduler;
-  scheduler.Simulate(400);
+  scheduler->Simulate(400);
 
   std::cout << "Simulation completed successfully!" << std::endl;
   return 0;
